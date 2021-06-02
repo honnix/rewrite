@@ -72,6 +72,11 @@ public class Pom implements Marker {
     DependencyManagement dependencyManagement;
 
     @With
+    Collection<Plugin> plugins;
+
+    PluginManagement pluginManagement;
+
+    @With
     Collection<License> licenses;
 
     Collection<MavenRepository> repositories;
@@ -97,6 +102,8 @@ public class Pom implements Marker {
                @Nullable Pom parent,
                Collection<Dependency> dependencies,
                DependencyManagement dependencyManagement,
+               Collection<Plugin> plugins,
+               PluginManagement pluginManagement,
                Collection<License> licenses,
                Collection<MavenRepository> repositories,
                Map<String, String> properties,
@@ -113,6 +120,8 @@ public class Pom implements Marker {
         this.parent = parent;
         this.dependencies = dependencies;
         this.dependencyManagement = dependencyManagement;
+        this.plugins = plugins;
+        this.pluginManagement = pluginManagement;
         this.licenses = licenses;
         this.repositories = repositories;
         this.properties = properties;
@@ -424,6 +433,107 @@ public class Pom implements Marker {
                     }
                 }
             }
+            return scope == null ? null : scope.name().toLowerCase();
+        }
+    }
+
+    @FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
+    @Data
+    public static class Plugin implements PluginDescriptor {
+        MavenRepository repository;
+
+        boolean optional;
+        Pom model;
+
+        @Nullable
+        String requestedVersion;
+
+        Set<Execution> executions;
+
+        public String getGroupId() {
+            return model.getGroupId();
+        }
+
+        public String getArtifactId() {
+            return model.getArtifactId();
+        }
+
+        public String getVersion() {
+            return model.getVersion();
+        }
+
+//        public String getCoordinates() {
+//            return model.getGroupId() + ':' + model.getArtifactId() + ':' + model.getVersion() +
+//                    (classifier == null ? "" : ':' + classifier);
+//        }
+
+//        @Override
+//        public String toString() {
+//            return "Dependency {" + getCoordinates() +
+//                    (optional ? ", optional" : "") +
+//                    (!getVersion().equals(requestedVersion) ? ", requested=" + requestedVersion : "") +
+//                    '}';
+//        }
+
+        /**
+         * TODO: update
+         * Finds transitive dependencies of this dependency that match the provided group and artifact ids.
+         *
+         * @param groupId    The groupId to match
+         * @param artifactId The artifactId to match.
+         * @return Transitive dependencies with any version matching the provided group and artifact id, if any.
+         */
+        public Collection<Pom.Plugin> findPlugins(String groupId, String artifactId) {
+            return findPlugins(p -> p.getGroupId().equals(groupId) && p.getArtifactId().equals(artifactId));
+        }
+
+        /**
+         * TODO: update
+         * Finds transitive dependencies of this dependency that match the given predicate.
+         *
+         * @param matcher A dependency test.
+         * @return Transitive dependencies with any version matching the given predicate.
+         */
+        public Collection<Pom.Plugin> findPlugins(Predicate<Plugin> matcher) {
+            List<Pom.Plugin> matches = new ArrayList<>();
+            if (matcher.test(this)) {
+                matches.add(this);
+            }
+            for (Plugin p : model.getPlugins()) {
+                matches.addAll(p.findPlugins(matcher));
+            }
+            return matches;
+        }
+    }
+
+    @FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
+    @Data
+    public static class PluginManagement {
+        Collection<PluginManagementPlugins> plugins;
+
+        @Nullable
+        public String getManagedVersion(String groupId, String artifactId) {
+            for (PluginManagementPlugins plugin : plugins) {
+                for (PluginDescriptor pluginDescriptor : plugin.getPlugins()) {
+                    if (groupId.equals(pluginDescriptor.getGroupId()) && artifactId.equals(pluginDescriptor.getArtifactId())) {
+                        return pluginDescriptor.getVersion();
+                    }
+                }
+            }
+            return null;
+        }
+
+        // Scope doesn't apply to plugins, but it may be necessary to look into phases.
+        @Nullable
+        public String getManagedScope(String groupId, String artifactId) {
+            Scope scope = null;
+//            for (DependencyManagementDependency dep : dependencies) {
+//                for (DependencyDescriptor dependencyDescriptor : dep.getDependencies()) {
+//                    if (groupId.equals(dependencyDescriptor.getGroupId()) && artifactId.equals(dependencyDescriptor.getArtifactId())) {
+//                        scope = Scope.maxPrecedence(scope, dependencyDescriptor.getScope() == null ? Scope.Compile : dependencyDescriptor.getScope());
+//                    }
+//                }
+//            }
             return scope == null ? null : scope.name().toLowerCase();
         }
     }

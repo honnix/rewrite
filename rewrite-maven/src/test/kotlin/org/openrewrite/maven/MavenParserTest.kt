@@ -56,6 +56,23 @@ class MavenParserTest {
                         </developer>
                     </developers>
     
+                    <pluginManagement>
+                        <plugins>
+                            <plugin>
+                                <groupId>org.openrewrite</groupId>
+                                <artifactId>rewrite-maven</artifactId>
+                                <version>1.0.0</version>
+                                <executions>
+                                    <execution>
+                                        <id>test</id>
+                                        <goals>
+                                            <goal>compile</goal>
+                                        </goals>
+                                    </execution>
+                                </executions>
+                            </plugin>
+                        </plugins>
+                    </pluginManagement>
                     <dependencies>
                       <dependency>
                         <groupId>org.junit.jupiter</groupId>

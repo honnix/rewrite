@@ -118,6 +118,8 @@ public class MavenArtifactHelper {
                     Collections.emptyList(),
                     new Pom.DependencyManagement(Collections.emptyList()),
                     Collections.emptyList(),
+                    new Pom.PluginManagement(Collections.emptyList()),
+                    Collections.emptyList(),
                     repositories,
                     Collections.emptyMap(),
                     Collections.emptyMap()

@@ -22,6 +22,7 @@ import lombok.*;
 import lombok.experimental.FieldDefaults;
 import lombok.experimental.NonFinal;
 import org.openrewrite.internal.lang.Nullable;
+import org.openrewrite.maven.tree.Execution;
 import org.openrewrite.maven.tree.GroupArtifact;
 
 import javax.xml.bind.annotation.XmlRootElement;
@@ -76,6 +77,12 @@ public class RawPom {
 
     @Nullable
     DependencyManagement dependencyManagement;
+
+    @Nullable
+    Plugins plugins;
+
+    @Nullable
+    PluginManagement pluginManagement;
 
     @Nullable
     Map<String, String> properties;
@@ -144,6 +151,45 @@ public class RawPom {
         }
 
         return activeDependencies;
+    }
+
+    public Collection<Plugin> getActivePluginManagementPlugins(Iterable<String> activeProfiles) {
+        Collection<Plugin> activePlugins = new ArrayList<>();
+
+        if (pluginManagement != null && pluginManagement.plugins != null) {
+            activePlugins.addAll(pluginManagement.plugins.getPlugins());
+        }
+
+        if (profiles != null) {
+            for (RawPom.Profile profile : getInnerProfiles()) {
+                if (profile.isActive(activeProfiles) && profile.getPluginManagement() != null &&
+                        profile.getPluginManagement().plugins != null) {
+                    activePlugins.addAll(profile.getPluginManagement().plugins.getPlugins());
+                }
+            }
+        }
+
+        return activePlugins;
+    }
+
+    public List<Plugin> getActivePlugins(Collection<String> activeProfiles) {
+        List<Plugin> activePlugins = new ArrayList<>();
+
+        if (plugins != null) {
+            activePlugins.addAll(plugins.getPlugins());
+        }
+
+        if (profiles != null) {
+            for (Profile profile : getInnerProfiles()) {
+                if (profile.isActive(activeProfiles)) {
+                    if (profile.plugins != null) {
+                        activePlugins.addAll(profile.plugins.plugins);
+                    }
+                }
+            }
+        }
+
+        return activePlugins;
     }
 
     public List<RawRepositories.Repository> getActiveRepositories(Collection<String> activeProfiles) {
@@ -227,6 +273,49 @@ public class RawPom {
         }
     }
 
+    @FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
+    @Data
+    public static class Plugin {
+        String groupId;
+        String artifactId;
+
+        @Nullable
+        String version;
+
+        // TODO: track down if this is necessary.
+        @Nullable
+        Boolean optional;
+
+        Set<Execution> executions;
+    }
+
+    @Getter
+    public static class PluginManagement {
+        @Nullable
+        private final Plugins plugins;
+
+        public PluginManagement() {
+            this.plugins = null;
+        }
+
+        public PluginManagement(@JsonProperty("plugins") @Nullable Plugins plugins) {
+            this.plugins = plugins;
+        }
+    }
+
+    @Getter
+    public static class Plugins {
+        private final List<Plugin> plugins;
+
+        public Plugins() {
+            this.plugins = emptyList();
+        }
+
+        public Plugins(@JacksonXmlProperty(localName = "plugin") List<Plugin> plugins) {
+            this.plugins = plugins;
+        }
+    }
+
     @Getter
     public static class Licenses {
         private final List<License> licenses;
@@ -297,6 +386,12 @@ public class RawPom {
 
         @Nullable
         DependencyManagement dependencyManagement;
+
+        @Nullable
+        Plugins plugins;
+
+        @Nullable
+        PluginManagement pluginManagement;
 
         @Nullable
         RawRepositories repositories;

@@ -129,6 +129,9 @@ public class RawMavenResolver {
         processLicenses(task, partialMaven);
         processDependencies(task, partialMaven);
 
+        processPluginManagement(task, partialMaven);
+        processPlugins(task, partialMaven);
+
         partialResults.put(task, partialMaven);
     }
 
@@ -404,6 +407,252 @@ public class RawMavenResolver {
                 .collect(toList()));
     }
 
+    private void processPluginManagement(ResolutionTask task, PartialMaven partialMaven) {
+        RawPom pom = task.getRawMaven().getPom();
+        List<PluginManagementPlugins> managementPlugins = new ArrayList<>();
+
+        for (RawPom.Plugin p : pom.getActivePluginManagementPlugins(activeProfiles)) {
+            if (p.getVersion() == null) {
+                ctx.getOnError().accept(new MavenParsingException(
+                        "Problem with pluginManagement section of %s:%s:%s. Unable to determine version of managed plugin %s:%s",
+                        pom.getGroupId(), pom.getArtifactId(), pom.getVersion(), p.getGroupId(), p.getArtifactId()));
+            }
+            assert p.getVersion() != null;
+
+            String groupId = partialMaven.getRequiredValue(p.getGroupId());
+            String artifactId = partialMaven.getRequiredValue(p.getArtifactId());
+            String version = partialMaven.getValue(p.getVersion(), false);
+
+            if (groupId == null || artifactId == null) {
+                ctx.getOnError().accept(new MavenParsingException(
+                        "Problem with dependencyManagement section of %s:%s:%s. Unable to determine groupId or " +
+                                "artifactId of managed dependency %s:%s.",
+                        pom.getGroupId(), pom.getArtifactId(), pom.getVersion(), p.getGroupId(), p.getArtifactId()));
+            }
+            assert groupId != null;
+            assert artifactId != null;
+
+//            if (Objects.equals(p.getType(), "pom") && Objects.equals(p.getScope(), "import")) {
+//                if (version == null) {
+//                    ctx.getOnError().accept(new MavenParsingException(
+//                            "Problem with dependencyManagement section of %s:%s:%s. Unable to determine version of " +
+//                                    "managed dependency %s:%s.",
+//                            pom.getGroupId(), pom.getArtifactId(), pom.getVersion(), p.getGroupId(), p.getArtifactId()));
+//                } else {
+//                    RawMaven rawMaven = downloader.download(groupId, artifactId, version, null, null,
+//                            partialMaven.getRepositories(), ctx);
+//                    if (rawMaven != null) {
+//                        Pom maven = new RawMavenResolver(downloader, activeProfiles, resolveOptional, ctx, projectDir)
+//                                .resolve(rawMaven, Scope.Compile, p.getVersion(), new HashMap<>(), partialMaven.getRepositories());
+//
+//                        if (maven != null) {
+//                            managedDependencies.add(new DependencyManagementDependency.Imported(groupId, artifactId,
+//                                    version, p.getVersion(), maven));
+//                        }
+//                    }
+//                }
+//            } else {
+//                Scope scope = p.getScope() == null ? null : Scope.fromName(p.getScope());
+//                if (!Scope.Invalid.equals(scope)) {
+//                    managedDependencies.add(new DependencyManagementDependency.Defined(
+//                            groupId, artifactId, version, p.getVersion(),
+//                            scope,
+//                            p.getClassifier(), p.getExclusions()));
+//                }
+//            }
+
+        }
+
+        partialMaven.setPluginManagement(new Pom.PluginManagement(managementPlugins));
+    }
+
+    private void processPlugins(ResolutionTask task, PartialMaven partialMaven) {
+        RawMaven rawMaven = task.getRawMaven();
+
+        // Parent dependencies wind up being part of the subtree rooted at "task", so affect conflict resolution further down tree.ls
+        if (partialMaven.getParent() != null) {
+            for (Pom.Plugin plugin : partialMaven.getParent().getPlugins()) {
+                // scope doesn't apply to plugins. ... check on how selectVersion works or add an equiv.
+//                RequestedVersion requestedVersion = selectVersion(plugin.getScope(), plugin.getGroupId(),
+//                        plugin.getArtifactId(), plugin.getVersion());
+
+                // groupArtifact doesn't apply to plugins ...
+//                versionSelection.get(plugin.getScope()).put(new GroupArtifact(dependency.getGroupId(), dependency.getArtifactId()), requestedVersion);
+            }
+        }
+
+        // TODO: translate this to plugins.
+        partialMaven.setPluginsTasks(rawMaven.getActivePlugins(activeProfiles).stream()
+                .filter(plugin -> rawMaven.isProjectPom() || (resolveOptional || plugin.getOptional() == null || !plugin.getOptional()))
+                .map(plugin -> {
+                    // replace property references, source versions from dependency management sections, etc.
+                    String groupId = partialMaven.getRequiredValue(plugin.getGroupId());
+                    String artifactId = partialMaven.getRequiredValue(plugin.getArtifactId());
+
+                    RawPom includingPom = rawMaven.getPom();
+                    if (groupId == null) {
+                        ctx.getOnError().accept(new MavenParsingException(
+                                "Problem resolving plugin of %s:%s:%s. Unable to determine groupId.",
+                                includingPom.getGroupId(), includingPom.getArtifactId(), includingPom.getVersion()));
+                        return null;
+                    }
+                    if (artifactId == null) {
+                        ctx.getOnError().accept(new MavenParsingException(
+                                "Problem resolving plugin of %s:%s:%s. Unable to determine artifactId.",
+                                includingPom.getGroupId(), includingPom.getArtifactId(), includingPom.getVersion()));
+                        return null;
+                    }
+
+                    if (plugin.getOptional() != null && plugin.getOptional() && task.getProjectPom() != null) {
+                        return null;
+                    }
+
+                    int i = 0;
+                    String last;
+
+                    // dependency exclusions don't apply to plugins directly.
+                    // may resolve executions here if not handled later.
+
+//                    for (GroupArtifact e : task.getExclusions()) {
+//                        try {
+//                            if (plugin.getGroupId().matches(e.getGroupId()) &&
+//                                    plugin.getArtifactId().matches(e.getArtifactId())) {
+//                                return null;
+//                            }
+//                        } catch (Exception exception) {
+//                            ctx.getOnError().accept(exception);
+//                            return null;
+//                        }
+//                    }
+
+                    //Determine if there is a managed version of the artifact.
+                    String managedVersion = null;
+
+                    // TODO: confirm details.
+                    PartialMaven projectPom = task.getProjectPom();
+                    if (projectPom != null) {
+                        // prefer plugin management from the project over the dependency's dependency management
+                        managedVersion = projectPom.getPluginManagement().getManagedVersion(groupId, artifactId);
+                        if (managedVersion == null && projectPom.getParent() != null) {
+                            managedVersion = projectPom.getParent().getManagedVersion(groupId, artifactId);
+                        }
+                    }
+
+                    // TODO: confirm for plugin management
+                    // loop so that when pluginManagement refers to a property that we take another pass to resolve the property.
+                    do {
+                        last = managedVersion;
+                        String result = null;
+                        if (last != null) {
+                            String partialMavenVersion = partialMaven.getRequiredValue(last);
+                            if (partialMavenVersion != null) {
+                                result = partialMavenVersion;
+                            }
+                        }
+                        if (result == null) {
+                            OUTER:
+                            for (PluginManagementPlugins managed : partialMaven.getPluginManagement().getPlugins()) {
+                                for (PluginDescriptor pluginDescriptor : managed.getPlugins()) {
+                                    if (groupId.equals(partialMaven.getRequiredValue(pluginDescriptor.getGroupId())) &&
+                                            artifactId.equals(partialMaven.getRequiredValue(pluginDescriptor.getArtifactId()))) {
+                                        result = pluginDescriptor.getVersion();
+                                        break OUTER;
+                                    }
+                                }
+                            }
+
+                            if (result == null && partialMaven.getParent() != null) {
+                                result = partialMaven.getParent().getManagedVersion(groupId, artifactId);
+                            }
+                        }
+                        managedVersion = result;
+                    } while (i++ < 2 || !Objects.equals(managedVersion, last));
+
+                    // TODO: confirm for plugins
+                    //Figure out which version should be used. If the artifact has an explicitly defined
+                    //version and it is not a transitive dependency of a managed dependency, the artifact
+                    //version "wins" over the managed dependency.
+
+                    String version = partialMaven.getValue(plugin.getVersion(), false);
+                    managedVersion = partialMaven.getValue(managedVersion, false);
+
+                    if ((task.getProjectPom() != null || version == null) && managedVersion != null) {
+                        version = managedVersion;
+                    }
+
+                    if (version == null) {
+                        ctx.getOnError().accept(new MavenParsingException("Failed to determine version for %s:%s. Initial value was %s. Including POM is at %s",
+                                groupId, artifactId, plugin.getVersion(), rawMaven));
+                        return null;
+                    }
+
+                    // TODO: figure out for plugins.
+//                    RequestedVersion requestedVersion = selectVersion(effectiveScope, groupId, artifactId, version);
+//                    versionSelection.get(effectiveScope).put(new GroupArtifact(groupId, artifactId), requestedVersion);
+//                    version = requestedVersion.resolve(downloader, partialMaven.getRepositories());
+
+//                    if (version == null || version.contains("${")) {
+//                        ctx.getOnError().accept(new MavenParsingException("Unable to download %s:%s:%s. Including POM is at %s",
+//                                groupId, artifactId, version, rawMaven));
+//                        return null;
+//                    }
+
+                    // TODO: check on how this works for plugins.
+                    RawMaven download = downloader.download(groupId, artifactId,
+                            version, null, rawMaven,
+                            partialMaven.getRepositories(), ctx);
+
+                    if (download == null) {
+                        ctx.getOnError().accept(new MavenParsingException("Unable to download %s:%s:%s. Including POM is at %s",
+                                groupId, artifactId, version, rawMaven.getSourcePath()));
+                        return null;
+                    }
+
+                    // TODO: refactor for plugins ... Executions.
+                    Set<Execution> executions;
+//                    if (plugin.getExclusions() == null) {
+//                        exclusions = task.getExclusions();
+//                    } else {
+//                        exclusions = new HashSet<>(task.getExclusions());
+//                        for (GroupArtifact ex : plugin.getExclusions()) {
+//                            GroupArtifact groupArtifact = new GroupArtifact(
+//                                    partialMaven.getRequiredValue(ex.getGroupId()),
+//                                    partialMaven.getRequiredValue(ex.getArtifactId())
+//                            );
+//                            GroupArtifact artifact = new GroupArtifact(
+//                                    groupArtifact.getGroupId() == null ? ".*" : groupArtifact.getGroupId().replace("*", ".*"),
+//                                    groupArtifact.getArtifactId() == null ? ".*" : groupArtifact.getArtifactId().replace("*", ".*")
+//                            );
+//                            exclusions.add(artifact);
+//                        }
+//                    }
+
+                    // TODO: refactor after ResolutionTask is modeled correctly ... ask Jon.
+                    ResolutionTask resolutionTask = new ResolutionTask(
+                            requestedScope,
+                            download,
+                            exclusions,
+                            plugin.getOptional() != null && plugin.getOptional(),
+                            plugin.getClassifier(),
+                            plugin.getType(),
+                            plugin.getVersion(),
+                            new HashMap<>(partialMaven.getEffectiveProperties()),
+                            task.getProjectPom() == null ? partialMaven : task.getProjectPom(),
+                            partialMaven.getRepositories(),
+                            null
+                    );
+
+                    if (!partialResults.containsKey(resolutionTask)) {
+                        // otherwise we've already resolved this subtree previously!
+                        workQueue.add(resolutionTask);
+                    }
+
+                    return resolutionTask;
+                })
+                .filter(Objects::nonNull)
+                .collect(toList()));
+    }
+
     private void processParent(ResolutionTask task, PartialMaven partialMaven) {
         RawMaven rawMaven = task.getRawMaven();
         RawPom pom = rawMaven.getPom();
@@ -598,6 +847,118 @@ public class RawMavenResolver {
                     }
                 }
 
+                List<Pom.Plugin> plugins = new ArrayList<>(partial.getPluginsTasks().size());
+                // TODO: add resolution of plugins.
+                // Notes:
+                // It may be a bad idea to add details about plugins in the ResolutionTank, but it may be necessary due to how process(x) works.
+                // Reusing the same stack for both dependencies and plugins, may cause issues.
+                // It looks possible to split dependency resolution and plugin resolution into two sequential units of work.
+                // Then assemble the results afterward.
+
+//                nextPlugin:
+//                for (ResolutionTask pluginTask : partial.getPluginsTasks()) {
+//                    RawPom pluginTaskPom = pluginTask.getRawMaven().getPom();
+//
+//                    // TODO: check into depTask.isOptional()
+//                    boolean optional = pluginTask.isOptional();
+//
+//                    Pom resolved = assembleResults(pluginTask, nextAssemblyStack);
+//                    if (resolved == null) {
+//                        continue;
+//                    }
+//
+//                    plugins.add(new Pom.Plugin(
+//                            pluginTask.getRawMaven().getRepository(),
+//                            optional,
+//                            conflictResolved,
+//                            pluginTask.getRequestedVersion(),
+//                            pluginTask.getExclusions()
+//                            resolved,
+//                            pluginTask.getSnapshotVersion(),
+//                    ));
+//                }
+
+//                nextDep:
+//                for (ResolutionTask depTask : partial.getDependencyTasks()) {
+//                    RawPom depTaskPom = depTask.getRawMaven().getPom();
+//                    for (GroupArtifact exclusion : exclusions) {
+//                        if (exclusion.getGroupId().equals(depTaskPom.getGroupId()) &&
+//                                exclusion.getArtifactId().equals(depTaskPom.getArtifactId())) {
+//                            continue nextDep;
+//                        }
+//                    }
+//
+//                    boolean optional = depTask.isOptional();
+//
+//                    Pom resolved = assembleResults(depTask, nextAssemblyStack);
+//                    if (resolved == null) {
+//                        continue;
+//                    }
+//
+//                    dependencies.add(new Pom.Dependency(
+//                            depTask.getRawMaven().getRepository(),
+//                            depTask.getScope(),
+//                            depTask.getClassifier(),
+//                            depTask.getType(),
+//                            optional,
+//                            resolved,
+//                            depTask.getRequestedVersion(),
+//                            depTaskPom.getSnapshotVersion(),
+//                            depTask.getExclusions()
+//                    ));
+//                }
+//
+//                for (Pom ancestor = partial.getParent(); ancestor != null; ancestor = ancestor.getParent()) {
+//                    for (Pom.Dependency ancestorDep : ancestor.getDependencies()) {
+//                        // the ancestor's dependency might be overridden by another version by conflict resolution
+//                        Scope scope = ancestorDep.getScope();
+//                        String groupId = ancestorDep.getGroupId();
+//                        String artifactId = ancestorDep.getArtifactId();
+//
+//                        String conflictResolvedVersion = selectVersion(scope, groupId, artifactId, ancestorDep.getVersion())
+//                                .resolve(downloader, task.getRepositories());
+//
+//                        if (!ancestorDep.getVersion().equals(conflictResolvedVersion)) {
+//                            assert conflictResolvedVersion != null;
+//                            RawMaven conflictResolvedRaw = downloader.download(groupId, artifactId, conflictResolvedVersion,
+//                                    null, null, task.getRepositories(), ctx);
+//
+//                            Pom conflictResolved = conflictResolvedRaw == null ? null :
+//                                    assembleResults(
+//                                            new ResolutionTask(
+//                                                    scope,
+//                                                    conflictResolvedRaw,
+//                                                    ancestorDep.getExclusions(),
+//                                                    ancestorDep.isOptional(),
+//                                                    ancestorDep.getClassifier(),
+//                                                    ancestorDep.getType(),
+//                                                    ancestorDep.getRequestedVersion(),
+//                                                    partial.effectiveProperties,
+//                                                    task.getProjectPom(),
+//                                                    task.getRepositories(),
+//                                                    null), nextAssemblyStack);
+//
+//                            if (conflictResolved == null) {
+//                                dependencies.add(ancestorDep);
+//                            } else {
+//                                dependencies.add(new Pom.Dependency(
+//                                        rawMaven.getRepository(),
+//                                        scope,
+//                                        ancestorDep.getClassifier(),
+//                                        ancestorDep.getType(),
+//                                        ancestorDep.isOptional(),
+//                                        conflictResolved,
+//                                        ancestorDep.getRequestedVersion(),
+//                                        ancestorDep.getDatedSnapshotVersion(),
+//                                        ancestorDep.getExclusions()
+//                                ));
+//                            }
+//                        } else {
+//                            dependencies.add(ancestorDep);
+//                        }
+//                    }
+//                }
+
                 String groupId = rawPom.getGroupId();
                 if (groupId == null) {
                     groupId = partial.getParent().getGroupId();
@@ -622,6 +983,8 @@ public class RawMavenResolver {
                                 partial.getParent(),
                                 dependencies,
                                 partial.getDependencyManagement(),
+                                plugins,
+                                partial.getPluginManagement(),
                                 partial.getLicenses(),
                                 partial.getRepositories(),
                                 partial.getProperties(),
@@ -691,6 +1054,8 @@ public class RawMavenResolver {
         @Nullable
         String requestedVersion;
 
+        // TODO: add plugin fields.
+
         /**
          * This is used to keep track of all properties encountered as raw maven poms are resolved into their partial forms.
          * A property key may exist in multiple places as the resolver walks the dependencies and the value of the property
@@ -734,7 +1099,9 @@ public class RawMavenResolver {
 
         Pom parent;
         Pom.DependencyManagement dependencyManagement;
+        Pom.PluginManagement pluginManagement;
         Collection<ResolutionTask> dependencyTasks = emptyList();
+        Collection<ResolutionTask> pluginsTasks = emptyList();
         Collection<Pom.License> licenses = emptyList();
         Collection<MavenRepository> repositories = emptyList();
 

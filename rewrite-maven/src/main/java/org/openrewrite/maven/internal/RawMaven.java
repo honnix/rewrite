@@ -100,6 +100,10 @@ public class RawMaven {
         return pom.getActiveDependencies(activeProfiles);
     }
 
+    public List<RawPom.Plugin> getActivePlugins(Collection<String> activeProfiles) {
+        return pom.getActivePlugins(activeProfiles);
+    }
+
     private static class MavenXmlParser extends XmlParser {
         @Override
         public boolean accept(Path path) {

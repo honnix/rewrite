@@ -121,7 +121,7 @@ public class AddDependencyVisitor extends MavenVisitor {
                         type,
                         false,
                         new Pom(randomId(), groupId, artifactId, version, null, null, null, packaging, classifier, null,
-                                emptyList(), new Pom.DependencyManagement(emptyList()), emptyList(), emptyList(), emptyMap(), emptyMap()),
+                                emptyList(), new Pom.DependencyManagement(emptyList()), emptyList(), new Pom.PluginManagement(emptyList()), emptyList(), emptyList(), emptyMap(), emptyMap()),
                         version,
                         null,
                         emptySet()
