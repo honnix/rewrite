@@ -185,7 +185,7 @@ public interface JavaType extends Serializable {
         // there shouldn't be too many distinct types represented by the same fully qualified name
         private static final Map<String, Set<Class>> flyweights = new WeakHashMap<>();
 
-        public static final Class OBJECT = build("java.lang.Object");
+        public static final Class OBJECT = new Class(1, "java.lang.Object", Kind.Class, emptyList(), emptyList(), null, null, null);
 
         private final String fullyQualifiedName;
 
@@ -317,17 +317,17 @@ public interface JavaType extends Serializable {
                         }
                     }
 
-                    if (candidate.supertype == null) {
-                        for (Class variant : variants) {
-                            if (variant.supertype != null) {
-                                return variant;
-                            } else {
-                                variants.add(candidate);
-                                return candidate;
-                            }
-                        }
+                    //The variants are maintained in insert order (using LinkedHashSet), non-relaxed types are inserted
+                    //into the front of the set. This means that relaxed type matching will prefer to use types that
+                    //were non-relaxed when searching for a match.
+                    if (variants.isEmpty()) {
+                        variants.add(candidate);
+                    } else {
+                        Set<JavaType.Class> newTypes = new LinkedHashSet<>(variants.size() + 1);
+                        newTypes.add(candidate);
+                        newTypes.addAll(variants);
+                        flyweights.put(fullyQualifiedName, newTypes);
                     }
-                    variants.add(candidate);
                     return candidate;
                 }
             }
@@ -341,6 +341,11 @@ public interface JavaType extends Serializable {
                                                      @Nullable List<Method> constructors,
                                                      @Nullable FullyQualified supertype,
                                                      @Nullable FullyQualified owningClass) {
+
+            if ("java.lang.Object".equals(fullyQualifiedName)) {
+                return OBJECT;
+            }
+
             List<Variable> sortedMembers;
             if (!members.isEmpty()) {
                 if (fullyQualifiedName.equals("java.lang.String")) {
@@ -361,7 +366,15 @@ public interface JavaType extends Serializable {
                 sortedMembers = members;
             }
 
-            return new Class(flagsBitMap, fullyQualifiedName, kind, sortedMembers, interfaces, constructors, supertype, owningClass);
+            JavaType.FullyQualified computedSuper;
+            if (kind == Kind.Class || kind == Kind.Enum) {
+                computedSuper = supertype == null ? OBJECT : supertype;
+            } else {
+                //All interfaces will have a null supertype.
+                computedSuper = null;
+            }
+
+            return new Class(flagsBitMap, fullyQualifiedName, kind, sortedMembers, interfaces, constructors, computedSuper, owningClass);
         }
 
         public List<Variable> getVisibleSupertypeMembers() {
@@ -380,7 +393,11 @@ public interface JavaType extends Serializable {
         @Override
         public boolean deepEquals(@Nullable JavaType type) {
             if (!(type instanceof Class)) {
-                return false;
+                if (type instanceof Cyclic) {
+                    return fullyQualifiedName.equals(((Cyclic) type).fullyQualifiedName);
+                } else {
+                    return false;
+                }
             }
 
             Class c = (Class) type;
@@ -502,7 +519,11 @@ public interface JavaType extends Serializable {
         @Override
         public boolean deepEquals(@Nullable JavaType type) {
             if (!(type instanceof Parameterized)) {
-                return false;
+                if (type instanceof Cyclic) {
+                    return this.type.getFullyQualifiedName().equals(((Cyclic) type).fullyQualifiedName);
+                } else {
+                    return false;
+                }
             }
 
             Parameterized p = (Parameterized) type;
@@ -562,7 +583,11 @@ public interface JavaType extends Serializable {
 
         @Override
         public boolean deepEquals(@Nullable JavaType type) {
-            return this.equals(type);
+            if (type instanceof FullyQualified) {
+                return fullyQualifiedName.equals(((FullyQualified) type).getFullyQualifiedName());
+            } else {
+                return false;
+            }
         }
 
         @Override
