@@ -1671,6 +1671,13 @@ public class ReloadableJava8ParserVisitor extends TreePathScanner<J, Space> {
                 List<Symbol> stackWithSym = new ArrayList<>(stack);
                 stackWithSym.add(sym);
                 if (clazz == null) {
+                    try {
+                        sym.complete();
+                    } catch (Symbol.CompletionFailure e) {
+                        //During attribution, we will likely encounter symbols that have been parsed but are not
+                        // on the parser's classpath. Calling complete on the symbol will result in an exception
+                        // being thrown. We eat the exception
+                    }
 
                     List<JavaType.Variable> fields;
                     if (sym.members_field == null) {
@@ -1724,7 +1731,7 @@ public class ReloadableJava8ParserVisitor extends TreePathScanner<J, Space> {
                             fields,
                             interfaces,
                             null,
-                            TypeUtils.asFullyQualified(type(classType.supertype_field, stackWithSym)),
+                            TypeUtils.asFullyQualified(type(classType.supertype_field != null ? classType.supertype_field : symType.supertype_field, stackWithSym)),
                             owner,
                             relaxedClassTypeMatching);
                     sharedClassTypes.put(clazz.getFullyQualifiedName(), clazz);

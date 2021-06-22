@@ -1673,15 +1673,6 @@ public class Java11ParserVisitor extends TreePathScanner<J, Space> {
             ClassType classType = (ClassType) type;
             Symbol.ClassSymbol sym = (Symbol.ClassSymbol) type.tsym;
             ClassType symType = (ClassType) sym.type;
-            if (!sym.isCompleted()) {
-                try {
-                    sym.complete();
-                } catch (Symbol.CompletionFailure e) {
-                    //During attribution, we will likely encounter symbols that have been parsed but are not
-                    // on the parser's classpath. Calling complete on the symbol will result in an exception
-                    // being thrown. We eat the exception
-                }
-            }
 
             if (stack.contains(sym))
                 return new JavaType.Cyclic(sym.className());
@@ -1690,6 +1681,15 @@ public class Java11ParserVisitor extends TreePathScanner<J, Space> {
                 List<Symbol> stackWithSym = new ArrayList<>(stack);
                 stackWithSym.add(sym);
                 if (clazz == null) {
+                    if (!sym.isCompleted()) {
+                        try {
+                            sym.complete();
+                        } catch (Symbol.CompletionFailure e) {
+                            //During attribution, we will likely encounter symbols that have been parsed but are not
+                            // on the parser's classpath. Calling complete on the symbol will result in an exception
+                            // being thrown. We eat the exception
+                        }
+                    }
 
                     List<JavaType.Variable> fields;
                     if (sym.members_field == null) {
