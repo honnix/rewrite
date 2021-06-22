@@ -184,6 +184,8 @@ public interface JavaType extends Serializable {
     class Class extends FullyQualified {
         // there shouldn't be too many distinct types represented by the same fully qualified name
         private static final Map<String, Set<Class>> flyweights = new WeakHashMap<>();
+        //TODO - Take this out, it is purely diagnositic, poorman's metrics, we should be using micrometer to record
+        //       variant counts.
         static {
             Runtime.getRuntime().addShutdownHook(new Thread(() -> flyweights.entrySet().forEach(
                     entry -> {
