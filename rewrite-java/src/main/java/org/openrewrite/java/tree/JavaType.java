@@ -184,7 +184,15 @@ public interface JavaType extends Serializable {
     class Class extends FullyQualified {
         // there shouldn't be too many distinct types represented by the same fully qualified name
         private static final Map<String, Set<Class>> flyweights = new WeakHashMap<>();
-
+        static {
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> flyweights.entrySet().forEach(
+                    entry -> {
+                        if (entry.getValue().size() > 1) {
+                            System.out.println(entry.getKey() + " has " + entry.getValue().size() + " variants.");
+                        }
+                    }))
+            );
+        }
         public static final Class OBJECT = new Class(1, "java.lang.Object", Kind.Class, emptyList(), emptyList(), null, null, null);
 
         private final String fullyQualifiedName;
